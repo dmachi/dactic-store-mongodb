@@ -13,19 +13,23 @@ var ObjectID = require('bson').ObjectID;
 var jsArray = require("rql/js-array");
 var RQ = require("rql/parser");
 
-var Store = module.exports = function(){
-	StoreBase.call(this);
+var Store = module.exports = function(id,options){
+	StoreBase.apply(this,arguments);
 }
 
 Store.prototype.authConfigProperty="solr";
 Store.prototype.primaryKey="id";
 	
 Store.prototype.init=function(){
-	debug("Creating MongoClient client @ " + this.options.url + "/" + this.id);
-	var _self=this;
-	MongoClient.connect(this.options.url , function(err,client){
-		_self.client=client;
-	});
+	if (this.options && this.options.url) {
+		debug("Creating MongoClient client @ " + this.options.url + "/" + this.id);
+		var _self=this;
+		MongoClient.connect(this.options.url , function(err,client){
+			_self.client=client;
+		});
+	}else{
+		throw Error("Missing MongoDB configuration in Store Init");
+	}
 
 	if (this.options && this.options.queryHandlers){
 		this._handlers = this.options.queryHandlers.concat(handlers);
