@@ -12,33 +12,107 @@ var when = require("promised-io/promise").when;
 var ObjectID = require('bson').ObjectID;
 var jsArray = require("rql/js-array");
 var RQ = require("rql/parser");
+var Result = require("dactic/result");
 
 var Store = module.exports = function(id,options){
 	StoreBase.apply(this,arguments);
 }
 
+util.inherits(Store, StoreBase);
+
 Store.prototype.authConfigProperty="solr";
 Store.prototype.primaryKey="id";
 	
-Store.prototype.init=function(){
+Store.prototype.connect=function(){
+	var def = new defer()
 	if (this.options && this.options.url) {
 		debug("Creating MongoClient client @ " + this.options.url + "/" + this.id);
 		var _self=this;
 		MongoClient.connect(this.options.url , function(err,client){
+			if (err){
+				def.reject(Error("Unable to connect to MongoDB: " + err));
+			}
+			console.log("Internal Connection Complete");
 			_self.client=client;
+			def.resolve(client);
+			
 		});
 	}else{
-		throw Error("Missing MongoDB configuration in Store Init");
+		def.reject(new Error("Missing MongoDB configuration in Store Init"));
 	}
 
-	if (this.options && this.options.queryHandlers){
-		this._handlers = this.options.queryHandlers.concat(handlers);
-	}
+	return def.promise;
 }
 
 Store.prototype.getSchema=function(){
 	debug("getSchema()");
-	return {}	
+	return this.schema || {}	
+}
+
+Store.prototype.setSchema=function(schema){
+	debug("mongodb: setSchema()", schema);
+	this.schema=schema;
+	var _self=this;
+	var db = this.client;
+	var def = new Deferred()
+	var colDef = new Deferred();
+	if (this.client){
+
+		_self.client.collection(_self.id, function(err,col){
+			if (err){
+				console.log("Error Retrieving Collection: " + err);
+				return colDef.reject(err)
+			}
+			col.stats(function(err,stats){
+				console.log("stats: ", stats);
+				if (!stats){
+					_self.client.createCollection(_self.id, function(err,col){
+						console.log("Collection: ", col);
+
+						colDef.resolve(col);
+					})
+				}else{
+					colDef.resolve(col)
+				}
+			})
+
+		}, function(err){
+			colDef.reject("Unable to find or create collection: " + _self.id)
+		})
+	}else{
+		colDef=false;
+		def.resolve(true);
+	}
+
+	//ensure index;
+	if (colDef){
+		when(colDef, function(col){
+			console.log("Check for Indexes");
+			var indexes=[]
+			if (_self.schema && _self.schema.properties){
+				console.log("Checking schema for indexed properties");
+				Object.keys(_self.schema.properties).forEach(function(prop){
+					if (_self.schema.properties[prop] && _self.schema.properties[prop].index){
+						var spec = {name: prop, unique: _self.schema.properties[prop].unique?true:false};
+						indexes.push(col.createIndex(prop,{w:1, unique:_self.schema.properties[prop].unique?true:false }));
+					}
+				})
+				console.log("indexes: ", indexes);
+				when(All(indexes), function(){
+					console.log("All Indexes Created");
+					def.resolve(true);
+				})
+
+			}else{
+				def.resolve(true);
+			}
+		}, function(err){
+			def.reject(err);
+		})
+	}
+
+	return def.promise;
+
 }
 
 Store.prototype.query=function(query, opts){
@@ -103,12 +177,16 @@ Store.prototype.query=function(query, opts){
 			}
 			// total count
 			when(totalCountPromise, function(result){
+				console.log("Got Total Count Promise");
 				var metadata = {}
 				metadata.count = results.length;
 				metadata.start = meta.skip;
 				metadata.end = meta.skip + results.count;
 				metadata.totalCount = result;
-				deferred.resolve({results: results,metadata: metadata});
+
+				console.log("MongoDB Store Results: ", results)
+				console.log("   Result Meta: ", metadata);
+				deferred.resolve(new Result(results,metadata))
 			});
 		});
 	});
@@ -125,7 +203,7 @@ Store.prototype.get=function(id, opts){
 	collection.find(query).toArray(function(err,docs){
 		if (docs[0]) { 
 			delete docs[0]._id; 
-			return def.resolve( {results: docs[0], metadata: {}});
+			return def.resolve(new Result(docs[0])); 
 		}
 		def.reject();
 	});
@@ -138,7 +216,7 @@ Store.prototype.post=function(obj, opts){
 		var obj = results.results;
 		console.log("store post() put() res: ", obj);
 		//return obj;
-		return {results: obj,metadata:{}};
+		return new Result(obj);
 	});
 }
 
@@ -162,7 +240,7 @@ Store.prototype.put=function(obj, opts){
 					// .insert() returns array, we need the first element
 					obj = obj && obj[0];
 					if (obj) delete obj._id;
-					deferred.resolve({results: obj,metadata:{}});
+					deferred.resolve(new Result(obj));
 				});
 			} else {
 				deferred.reject(id + " exists, and can't be overwritten");
@@ -174,7 +252,7 @@ Store.prototype.put=function(obj, opts){
 			console.log("colleciton.update Put Results: ", obj);
 			if (err) return deferred.reject(err);
 			if (obj) delete obj._id;
-			deferred.resolve({results: obj, metadata:{}});
+			deferred.resolve(new Result(obj));
 		});
 	}
 
