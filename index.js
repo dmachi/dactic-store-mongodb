@@ -49,6 +49,21 @@ Store.prototype.getSchema=function(){
 	return this.schema || {}	
 }
 
+Store.prototype.increment = function(id,obj){
+	var q = {};
+	q[this.primaryKey] = id;
+	var update = {"$inc": obj};
+	var def = new Deferred();
+
+	var collection = this.client.collection(this.collectionId || this.id);
+	collection.update(q, update, function(err, res){
+		if (err) return def.reject(err);
+		def.resolve(new Result(true));
+	});
+
+	return def.promise;
+}
+
 Store.prototype.setSchema=function(schema){
 	debug("mongodb: setSchema()", schema);
 	this.schema=schema;
@@ -126,6 +141,8 @@ Store.prototype.query=function(query, opts){
 	var x = parse(query, opts);
 	var meta = x[0], search = x[1];
 
+	
+
 	// range of non-positive length is trivially empty
 	//if (options.limit > options.totalCount)
 	//	options.limit = options.totalCount;
@@ -153,7 +170,9 @@ Store.prototype.query=function(query, opts){
 	console.log("SEARCH: ", search);
 	console.log("META: ", meta);
 
-	collection.find(search, meta, function(err, cursor){
+
+	var handler = function(err,cursor){
+		console.log("handler args: ", arguments);
 		if (err) return deferred.reject(err);
 		cursor.toArray(function(err, results){
 			if (err) return deferred.reject(err);
@@ -189,8 +208,23 @@ Store.prototype.query=function(query, opts){
 				deferred.resolve(new Result(results,metadata))
 			});
 		});
-	});
 
+	}
+
+	if (meta.distinct){
+		collection.distinct(meta.distinct,search,function(err,docs){
+			if (err) return deferred.reject(err);
+
+			var metadata = {}
+			metadata.count = docs.length;
+			metadata.start = meta.skip;
+			metadata.end = meta.skip + docs.length;
+			metadata.totalCount = docs.length;
+			deferred.resolve(new Result(docs,metadata));
+		});
+	}else{
+		collection.find(search, meta, handler);
+	}
 	return deferred.promise;
 }
 
@@ -221,35 +255,36 @@ Store.prototype.post=function(obj, opts){
 }
 
 Store.prototype.put=function(obj, opts){
+	console.log("Store.put(obj): ",obj);
 	var deferred = defer();
 	opts = opts || {};
-	var id = opts.id || obj.id;
-	if (!obj.id) obj.id = id;
-	var search = {id: id};
+	var search = {id: obj[this.primaryKey]};
 	var collection = this.client.collection(this.collectionId || this.id);
-	if (opts.overwrite === false || !id) {
-		console.log("overwrite or insert store put()", obj, opts);
+	if (!opts.overwrite) {
+		console.log("store put() insert", obj, opts);
 		// do an insert, and check to make sure no id matches first
 		collection.findOne(search, function(err, found){
 			if (err) return deferred.reject(err);
 			if (found === null) {
 				if (!obj.id) obj.id = ObjectID.createPk().toJSON();
-				collection.insert(obj, function(err, obj){
-					console.log("store colleciton insert res: ", obj);
+				console.log("collection.insert: ",obj);
+				collection.insertOne(obj, function(err, robj){
+					console.log("store collection insert res: ", robj);
 					if (err) return deferred.reject(err);
 					// .insert() returns array, we need the first element
-					obj = obj && obj[0];
-					if (obj) delete obj._id;
-					deferred.resolve(new Result(obj));
+					robj = robj && robj[0];
+					if (robj) delete robj._id;
+					deferred.resolve(new Result(robj));
 				});
 			} else {
 				deferred.reject(id + " exists, and can't be overwritten");
 			}
 		});
 	} else {
-		console.log("put() store update: ", obj);
+		console.log("store.put() update: ", obj);
 		collection.update(search, obj, {upsert: opts.overwrite}, function(err, res){
-			console.log("colleciton.update Put Results: ", obj);
+			console.log("collection.update Put Results: ", res);
+			console.log("Put obj: ", obj);
 			if (err) return deferred.reject(err);
 			if (obj) delete obj._id;
 			deferred.resolve(new Result(obj));
@@ -334,6 +369,8 @@ function parse(query, directives){
 				options.unhash = true;
 				options.fields = args;
 				// N.B. mongo has $slice but so far we don't allow it
+			} else if (func == "distinct") {
+				options.distinct = args[0] || false;
 			/*} else if (func == 'slice') {
 				options[args.shift()] = {'$slice': args.length > 1 ? args : args[0]};*/
 			} else if (func == 'limit') {
