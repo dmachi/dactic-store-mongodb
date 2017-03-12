@@ -1,6 +1,6 @@
 {
   "name": "dactic-store-mongodb",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "MongoDB Data Store for the Dactic framework",
   "main": "index.js",
   "scripts": {
@@ -10,7 +10,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "bson": "^0.5.6",
-    "dactic": "0.0.9",
+    "dactic": "^0.8.2",
     "debug": "^2.2.0",
     "mongodb": "^2.2.11",
     "promised-io": "^0.3.5",
