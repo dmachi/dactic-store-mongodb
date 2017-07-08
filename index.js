@@ -156,8 +156,12 @@ Store.prototype.query=function(query, opts){
 	// N.B. due to collection.count doesn't respect meta.skip and meta.limit
 	// we have to correct returned totalCount manually.
 	// totalCount will be the minimum of unlimited query length and the limit itself
-	var totalCountPromise = (meta.totalCount) ?
-		when(callAsync(collection.count, [search]), function(totalCount){
+	var totalCountPromise;
+	if (meta.totalCount){
+		totalCountPromise = (meta.totalCount)
+	}else{
+		totalCountPromise = when(collection.count(search), function(totalCount){
+			console.log("TotalCount: ", totalCount);
 			totalCount -= meta.lastSkip;
 			if (totalCount < 0)
 				totalCount = 0;
@@ -165,7 +169,8 @@ Store.prototype.query=function(query, opts){
 				totalCount = meta.lastLimit;
 			// N.B. just like in rql/js-array
 			return Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity);
-		}) : undefined;
+		}) 
+	}
 
 	console.log("SEARCH: ", search);
 	console.log("META: ", meta);
@@ -196,7 +201,7 @@ Store.prototype.query=function(query, opts){
 			}
 			// total count
 			when(totalCountPromise, function(result){
-				console.log("Got Total Count Promise");
+				console.log("Got Total Count Promise", result);
 				var metadata = {}
 				metadata.count = results.length;
 				metadata.start = meta.skip;
