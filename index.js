@@ -22,7 +22,6 @@ util.inherits(Store, StoreBase);
 
 Store.prototype.authConfigProperty="solr";
 Store.prototype.primaryKey="id";
-	
 Store.prototype.connect=function(){
 	var def = new defer()
 	if (this.options && this.options.url) {
@@ -189,8 +188,10 @@ Store.prototype.query=function(query, opts){
 			var fields = meta.fields;
 			var len = results.length;
 			// damn ObjectIDs!
-			for (var i = 0; i < len; i++) {
-				delete results[i]._id;
+			if (!_self.options.dontRemoveMongoIds){
+				for (var i = 0; i < len; i++) {
+					delete results[i]._id;
+				}
 			}
 			// kick out unneeded fields
 			if (fields) {
@@ -241,7 +242,9 @@ Store.prototype.get=function(id, opts){
 	var collection = this.client.collection(this.collectionId || this.id);
 	collection.find(query).toArray(function(err,docs){
 		if (docs[0]) { 
-			delete docs[0]._id; 
+			if (!_self.options.dontRemoveMongoIds){
+				delete docs[0]._id; 
+			}
 			return def.resolve(new Result(docs[0])); 
 		}
 		def.reject();
@@ -263,7 +266,10 @@ Store.prototype.put=function(obj, opts){
 	console.log("Store.put(obj): ",obj);
 	var deferred = defer();
 	opts = opts || {};
-	var search = {id: obj[this.primaryKey]};
+	var _self=this;
+	var search = {}
+	search[this.primaryKey] = obj[this.primaryKey];
+
 	var collection = this.client.collection(this.collectionId || this.id);
 	if (!opts.overwrite) {
 		console.log("store put() insert", obj, opts);
@@ -271,14 +277,22 @@ Store.prototype.put=function(obj, opts){
 		collection.findOne(search, function(err, found){
 			if (err) return deferred.reject(err);
 			if (found === null) {
-				if (!obj.id) obj.id = ObjectID.createPk().toJSON();
+				if (!obj[_self.primaryKey]) {
+					console.log("Generating ID on " + _self.primaryKey);
+					obj[_self.primaryKey] = ObjectID.createPk().toJSON();
+				}
+
+
 				console.log("collection.insert: ",obj);
 				collection.insertOne(obj, function(err, robj){
 					console.log("store collection insert res: ", robj);
-					if (err) return deferred.reject(err);
+					if (err) {
+						console.log("Store Collection Insert Error: ", err);
+						return deferred.reject(err);
+					}
 					// .insert() returns array, we need the first element
 					robj = robj && robj[0];
-					if (robj) delete robj._id;
+					if (robj && (!_self.options.dontRemoveMongoIds)) delete robj._id;
 					deferred.resolve(new Result(robj));
 				});
 			} else {
@@ -291,7 +305,7 @@ Store.prototype.put=function(obj, opts){
 			console.log("collection.update Put Results: ", res);
 			console.log("Put obj: ", obj);
 			if (err) return deferred.reject(err);
-			if (obj) delete obj._id;
+			if (obj && (!_self.options.dontRemoveMongoIds)) delete obj._id;
 			deferred.resolve(new Result(obj));
 		});
 	}
@@ -338,6 +352,7 @@ function parse(query, directives){
 //if (!needBulkFetch) {
 
 	function walk(name, terms) {
+		console.log("Walking: ", name, "terms: ", terms);
 		// valid funcs
 		var valid_funcs = ['lt','lte','gt','gte','ne','in','nin','not','mod','all','size','exists','type','elemMatch'];
 		// funcs which definitely require array arguments
@@ -394,11 +409,12 @@ function parse(query, directives){
 				// TODO:
 				// nested terms? -> recurse
 			} else if (args[0] && typeof args[0] === 'object') {
+				console.log("WALKING OBJECT: ", args);
 				if (valid_operators.indexOf(func) > -1){
 					if (func=="and") {
 						search['$'+func] = [walk(func, args)];
 					}else{
-						search["$"+func] = walk(func,args);
+						search["$"+func] = walk(args);
 					}
 				}
 				// N.B. here we encountered a custom function
@@ -437,6 +453,7 @@ function parse(query, directives){
 				}
 				// $or requires an array of conditions
 				// N.B. $or is said available for mongodb >= 1.5.1
+				console.log("name: ", name);
 				if (name == 'or') {
 					if (!(search instanceof Array))
 						search = [];
@@ -446,10 +463,20 @@ function parse(query, directives){
 					// other functions pack conditions into object
 				} else {
 					// several conditions on the same property is merged into one object condition
+					console.log("search key: ", key, "search[key]=",search[key]);
 					if (search[key] === undefined)
 						search[key] = {};
-					if (search[key] instanceof Object && !(search[key] instanceof Array))
-						search[key][func] = args;
+					if (search[key] instanceof Object && !(search[key] instanceof Array)){
+						console.log("Add Function Args:" ,args);
+						//if (false){
+						if (args.name) {
+							console.log("args.name: ", args.name, " args.args: ", args.args);
+							search[key][func] = walk(args.name,args.args);
+							console.log("search[" + key + "][" + func + "]", search[key][func]);
+						}else{
+							search[key][func] = args;
+						}
+					}
 					// equality cancels all other conditions
 					if (func == 'eq')
 						search[key] = args;
