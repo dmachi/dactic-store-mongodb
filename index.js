@@ -31,7 +31,7 @@ Store.prototype.connect=function(){
 			if (err){
 				def.reject(Error("Unable to connect to MongoDB: " + err));
 			}
-			console.log("Internal Connection Complete");
+//			console.log("Internal Connection Complete");
 			_self.client=client;
 			def.resolve(client);
 			
@@ -78,10 +78,10 @@ Store.prototype.setSchema=function(schema){
 				return colDef.reject(err)
 			}
 			col.stats(function(err,stats){
-				console.log("stats: ", stats);
+				//console.log("stats: ", stats);
 				if (!stats){
 					_self.client.createCollection(_self.id, function(err,col){
-						console.log("Collection: ", col);
+						//console.log("Collection: ", col);
 
 						colDef.resolve(col);
 					})
@@ -176,7 +176,7 @@ Store.prototype.query=function(query, opts){
 
 
 	var handler = function(err,cursor){
-		console.log("handler args: ", arguments);
+		//console.log("handler args: ", arguments);
 		if (err) return deferred.reject(err);
 		cursor.toArray(function(err, results){
 			if (err) return deferred.reject(err);
@@ -202,15 +202,15 @@ Store.prototype.query=function(query, opts){
 			}
 			// total count
 			when(totalCountPromise, function(result){
-				console.log("Got Total Count Promise", result);
+				//console.log("Got Total Count Promise");
 				var metadata = {}
 				metadata.count = results.length;
 				metadata.start = meta.skip;
 				metadata.end = meta.skip + results.count;
 				metadata.totalCount = result;
 
-				console.log("MongoDB Store Results: ", results)
-				console.log("   Result Meta: ", metadata);
+				//console.log("MongoDB Store Results: ", results)
+				//console.log("   Result Meta: ", metadata);
 				deferred.resolve(new Result(results,metadata))
 			});
 		});
@@ -253,17 +253,17 @@ Store.prototype.get=function(id, opts){
 }
 
 Store.prototype.post=function(obj, opts){
-	console.log("mongodb store post");
+	//console.log("mongodb store post");
 	return when(this.put(obj,opts),function(results){
 		var obj = results.results;
-		console.log("store post() put() res: ", obj);
+		//console.log("store post() put() res: ", obj);
 		//return obj;
 		return new Result(obj);
 	});
 }
 
 Store.prototype.put=function(obj, opts){
-	console.log("Store.put(obj): ",obj);
+	//console.log("Store.put(obj): ",obj);
 	var deferred = defer();
 	opts = opts || {};
 	var _self=this;
@@ -272,7 +272,7 @@ Store.prototype.put=function(obj, opts){
 
 	var collection = this.client.collection(this.collectionId || this.id);
 	if (!opts.overwrite) {
-		console.log("store put() insert", obj, opts);
+		//console.log("store put() insert", obj, opts);
 		// do an insert, and check to make sure no id matches first
 		collection.findOne(search, function(err, found){
 			if (err) return deferred.reject(err);
@@ -300,10 +300,10 @@ Store.prototype.put=function(obj, opts){
 			}
 		});
 	} else {
-		console.log("store.put() update: ", obj);
+		//console.log("store.put() update: ", obj);
 		collection.update(search, obj, {upsert: opts.overwrite}, function(err, res){
-			console.log("collection.update Put Results: ", res);
-			console.log("Put obj: ", obj);
+			//console.log("collection.update Put Results: ", res);
+			//console.log("Put obj: ", obj);
 			if (err) return deferred.reject(err);
 			if (obj && (!_self.options.dontRemoveMongoIds)) delete obj._id;
 			deferred.resolve(new Result(obj));
