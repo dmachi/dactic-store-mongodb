@@ -471,7 +471,7 @@ function parse(query, directives){
 						//if (false){
 						if (args.name) {
 							console.log("args.name: ", args.name, " args.args: ", args.args);
-							search[key][func] = walk(args.name,args.args);
+							search[key][func] = walk("and",[args]);
 							console.log("search[" + key + "][" + func + "]", search[key][func]);
 						}else{
 							search[key][func] = args;
