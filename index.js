@@ -11,7 +11,9 @@ var defer = require("promised-io/promise").defer;
 var when = require("promised-io/promise").when;
 var ObjectID = require('bson').ObjectID;
 var jsArray = require("rql/js-array");
-var RQ = require("rql/parser");
+//var RQ = require("rql/parser");
+var RQ = require("./rql");
+
 var Result = require("dactic/result");
 
 var Store = module.exports = function(id,options){
@@ -138,7 +140,7 @@ Store.prototype.query=function(query, opts){
 
 	// compose search conditions
 	var x = parse(query, opts);
-	var meta = x[0], search = x[1];
+	var meta = x[1], search = x[0];
 
 	
 
@@ -179,13 +181,15 @@ Store.prototype.query=function(query, opts){
 		//console.log("handler args: ", arguments);
 		if (err) return deferred.reject(err);
 		cursor.toArray(function(err, results){
+			console.log("MONGO RESULTS: ", results);
 			if (err) return deferred.reject(err);
 			// N.B. results here can be [{$err: 'err-message'}]
 			// the only way I see to distinguish from quite valid result [{_id:..., $err: ...}] is to check for absense of _id
 			if (results && results[0] && results[0].$err !== undefined && results[0]._id === undefined) {
 				return deferred.reject(results[0].$err);
 			}
-			var fields = meta.fields;
+			var fields = meta.select && (meta.select.length>0);
+			console.log("fields: ",fields);
 			var len = results.length;
 			// damn ObjectIDs!
 			if (!_self.options.dontRemoveMongoIds){
@@ -195,9 +199,11 @@ Store.prototype.query=function(query, opts){
 			}
 			// kick out unneeded fields
 			if (fields) {
+				//results = jsArray.executeQuery('select(' + fields + ')', {},results);
+				//console.log("Post Select results: ", results);
 				// unhash objects to arrays
 				if (meta.unhash) {
-					results = jsArray.executeQuery('values('+fields+')', directives, results);
+					results = jsArray.executeQuery('values('+fields+')', {}, results);
 				}
 			}
 			// total count
@@ -323,8 +329,28 @@ Store.prototype.delete=function(obj,opts){
 }
 	
 
+function parse(query,directives){
+	// parse string to parsed terms
+	if(typeof query === "string"){
+		query = new RQ(query); // RQ.parseQuery(query);
+	}
+/*
+	console.log("parse query: ", query);
+	var options = {
+		skip: 0,
+		limit: +Infinity,
+		lastSkip: 0,
+		lastLimit: +Infinity
+	};
+*/
 
-function parse(query, directives){
+	var mq = query.toMongo();
+	console.log("mq: ", mq);
+
+	return mq;
+}
+
+function parseOrg(query, directives){
 	// parse string to parsed terms
 	if(typeof query === "string"){
 		// handle $-parameters
@@ -363,6 +389,7 @@ function parse(query, directives){
 		var search = {};
 		// iterate over terms
 		terms.forEach(function(term){
+			console.log("Check Term: ", term);
 			var func = term.name;
 			var args = term.args;
 			// ignore bad terms
@@ -410,12 +437,17 @@ function parse(query, directives){
 				// nested terms? -> recurse
 			} else if (args[0] && typeof args[0] === 'object') {
 				console.log("WALKING OBJECT: ", args);
+				console.log("func: ", func);
+				console.log("Valid operators: ", valid_operators);
 				if (valid_operators.indexOf(func) > -1){
 					if (func=="and") {
 						search['$'+func] = [walk(func, args)];
 					}else{
-						search["$"+func] = walk(args);
+						console.log("else walk(args): ", walk(args));
+						search["$"+func] = walk(func,args);
 					}
+				}else{
+					console.log("Func: ", func, " is not a valid operator");
 				}
 				// N.B. here we encountered a custom function
 				// ...
@@ -469,13 +501,13 @@ function parse(query, directives){
 					if (search[key] instanceof Object && !(search[key] instanceof Array)){
 						console.log("Add Function Args:" ,args);
 						//if (false){
-						if (args.name) {
-							console.log("args.name: ", args.name, " args.args: ", args.args);
-							search[key][func] = walk("and",[args]);
-							console.log("search[" + key + "][" + func + "]", search[key][func]);
-						}else{
+						//if (args.name) {
+						//	console.log("args.name: ", args.name, " args.args: ", args.args);
+						//	search[key][func] = walk("and",[args]);
+						//	console.log("search[" + key + "][" + func + "]", search[key][func]);
+						//}else{
 							search[key][func] = args;
-						}
+						//}
 					}
 					// equality cancels all other conditions
 					if (func == 'eq')
@@ -484,11 +516,12 @@ function parse(query, directives){
 			}
 			// TODO: add support for query expressions as Javascript
 		});
+		console.log("Return Search: ", search);
 		return search;
 	}
-	//dir(['Q:',query]);
+	console.log(['Q:',query]);
 	search = walk(query.name, query.args);
-	//dir(['S:',search]);
+	console.log(['S:',search]);
 	return [options, search];
 }
 
