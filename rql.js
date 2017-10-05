@@ -18,7 +18,7 @@ RQLQuery.prototype.toMongo= function(opts){
         };
 
 	var out = queryToMongo(this,meta)
-	console.log("toMongo out: ", out, meta);
+	//console.log("toMongo out: ", out, meta);
 
 	return [out,meta];
 }
@@ -188,16 +188,16 @@ function serializeArgs(array, delimiter){
 function queryToMongo(part,options) {
 	options = options || {}
 
-	console.log("queryToMongo: ", part);
+	//console.log("queryToMongo: ", part);
 
 	if (part instanceof Array) {
 		return part.map(queryToMongo);
 		return part;
 	}else if (typeof part === "object" && part && part.name && part.args && _handlerMap[part.name]) {
-		console.log("HANDLE: ", part.name, " Part: ", part);
+		//console.log("HANDLE: ", part.name, " Part: ", part);
 		return _handlerMap[part.name](part,options);
 	}else if (typeof part == "string"){
-		console.log("DECODE URI COMPONENT: ", part);
+		//console.log("DECODE URI COMPONENT: ", part);
 		return decodeURIComponent(part);
 	}else{
 		return part;
@@ -253,10 +253,11 @@ var handlers = [
 		}],
 
 		["eq", function(query, options){
-			console.log("eq() handler: ", query);
+			//console.log("eq() handler: ", query);
 			var parts = [query.args[0]]
 			parts.push(queryToMongo(query.args[1],options));
-			var val = decodeURIComponent(parts[1]);
+			//var val = decodeURIComponent(parts[1]);
+			var val = parts[1];
 			var field = parts[0];
 			var out = {};
 			out[field]=val;
@@ -377,15 +378,15 @@ var handlers = [
 			options.lastSkip = options.skip;
 			options.lastLimit = options.limit;
 			// TODO: validate args, negative args
-			console.log("limit args: ", args);
+			//console.log("limit args: ", args);
 			var l = args[0] || Infinity, s = args[1] || 0;
-			console.log("l: ", l, "s: ", s);
+			//console.log("l: ", l, "s: ", s);
 			// N.B: so far the last seen limit() contains Infinity
 			options.totalCount = args[2];
 			if (l <= 0) l = 0;
 			if (s > 0) options.skip += s, options.limit -= s;
 			if (l < options.limit) options.limit = l;
-			console.log("Options after limit: ", options);
+			//console.log("Options after limit: ", options);
 			return;
 		}]
 

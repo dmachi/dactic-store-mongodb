@@ -162,7 +162,7 @@ Store.prototype.query=function(query, opts){
 		totalCountPromise = (meta.totalCount)
 	}else{
 		totalCountPromise = when(collection.count(search), function(totalCount){
-			console.log("TotalCount: ", totalCount);
+			//console.log("TotalCount: ", totalCount);
 			totalCount -= meta.lastSkip;
 			if (totalCount < 0)
 				totalCount = 0;
@@ -173,15 +173,15 @@ Store.prototype.query=function(query, opts){
 		}) 
 	}
 
-	console.log("SEARCH: ", search);
-	console.log("META: ", meta);
+//	console.log("SEARCH: ", search);
+//	console.log("META: ", meta);
 
 
 	var handler = function(err,cursor){
 		//console.log("handler args: ", arguments);
 		if (err) return deferred.reject(err);
 		cursor.toArray(function(err, results){
-			console.log("MONGO RESULTS: ", results);
+			//console.log("MONGO RESULTS: ", results);
 			if (err) return deferred.reject(err);
 			// N.B. results here can be [{$err: 'err-message'}]
 			// the only way I see to distinguish from quite valid result [{_id:..., $err: ...}] is to check for absense of _id
@@ -189,7 +189,7 @@ Store.prototype.query=function(query, opts){
 				return deferred.reject(results[0].$err);
 			}
 			var fields = meta.select && (meta.select.length>0);
-			console.log("fields: ",fields);
+			//console.log("fields: ",fields);
 			var len = results.length;
 			// damn ObjectIDs!
 			if (!_self.options.dontRemoveMongoIds){
@@ -284,14 +284,14 @@ Store.prototype.put=function(obj, opts){
 			if (err) return deferred.reject(err);
 			if (found === null) {
 				if (!obj[_self.primaryKey]) {
-					console.log("Generating ID on " + _self.primaryKey);
+//					console.log("Generating ID on " + _self.primaryKey);
 					obj[_self.primaryKey] = ObjectID.createPk().toJSON();
 				}
 
 
-				console.log("collection.insert: ",obj);
+				//console.log("collection.insert: ",obj);
 				collection.insertOne(obj, function(err, robj){
-					console.log("store collection insert res: ", robj);
+					//console.log("store collection insert res: ", robj);
 					if (err) {
 						console.log("Store Collection Insert Error: ", err);
 						return deferred.reject(err);
@@ -345,7 +345,7 @@ function parse(query,directives){
 */
 
 	var mq = query.toMongo();
-	console.log("mq: ", mq);
+//	console.log("mq: ", mq);
 
 	return mq;
 }
