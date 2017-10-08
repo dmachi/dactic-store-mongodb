@@ -352,11 +352,11 @@ var handlers = [
 		}],
 
 		["distinct", function(query, options){
-			if (!options.distinct){
-				options.distinct=[]
-			}
+		//	if (!options.distinct){
+		//		options.distinct=[]
+		//	}
 
-			options.distinct.push(query.args);
+			options.distinct=query.args[0];
 		}],
 
 		["values", function(query, options){
@@ -369,6 +369,28 @@ var handlers = [
 		}],
 
 		["sort", function(query, options){
+			var sort = {}	
+			query.args.forEach(function(a){
+				var fc = a.charAt(0)
+				console.log("FC: ", fc);
+				var dir = 1;
+				var field;
+				if (fc=="+") {
+					dir = 1;
+					field = a.substr(1);
+				}else if (fc=="-"){
+					dir = -1;
+					field = a.substr(1);
+				}else{
+					dir = 1;
+					field=a;
+				}
+			
+				sort[field]=dir;	
+			});
+
+			options.sort = sort;	
+
 			return;	
 		}],
 
