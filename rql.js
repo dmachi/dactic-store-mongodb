@@ -18,7 +18,7 @@ RQLQuery.prototype.toMongo= function(opts){
         };
 
 	var out = queryToMongo(this,meta)
-	//console.log("toMongo out: ", out, meta);
+	console.log("toMongo out: ", out, meta);
 
 	return [out,meta];
 }
@@ -331,11 +331,17 @@ var handlers = [
 
 		["elemMatch", function(query, options){
 			var parts = [query.args[0]]
-			parts.push(queryToMongo(query.args[1],options));
-                        var val = parts[1];
-                        var field = parts[0];
+			var val;
 			var out={};
-			out[field]={"$elemMatch":val};
+                        var field = parts[0];
+			console.log("query.args[1]: ", query.args[1]);
+			if (typeof query.args[1]=="object"){
+				val = queryToMongo(query.args[1],options);
+				out[field]={"$elemMatch":val};
+			}else{
+	                        val = query.args[1];
+				out[field]=val; //{"$elemMatch":val};
+			}
 			return out;	
 		}],
 
@@ -372,7 +378,6 @@ var handlers = [
 			var sort = {}	
 			query.args.forEach(function(a){
 				var fc = a.charAt(0)
-				console.log("FC: ", fc);
 				var dir = 1;
 				var field;
 				if (fc=="+") {

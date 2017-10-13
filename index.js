@@ -103,19 +103,19 @@ Store.prototype.setSchema=function(schema){
 	//ensure index;
 	if (colDef){
 		when(colDef, function(col){
-			console.log("Check for Indexes");
+	//		console.log("Check for Indexes");
 			var indexes=[]
 			if (_self.schema && _self.schema.properties){
-				console.log("Checking schema for indexed properties");
+				//console.log("Checking schema for indexed properties");
 				Object.keys(_self.schema.properties).forEach(function(prop){
 					if (_self.schema.properties[prop] && _self.schema.properties[prop].index){
 						var spec = {name: prop, unique: _self.schema.properties[prop].unique?true:false};
 						indexes.push(col.createIndex(prop,{w:1, unique:_self.schema.properties[prop].unique?true:false }));
 					}
 				})
-				console.log("indexes: ", indexes);
+				//console.log("indexes: ", indexes);
 				when(All(indexes), function(){
-					console.log("All Indexes Created");
+					//console.log("All Indexes Created");
 					def.resolve(true);
 				})
 
@@ -173,8 +173,8 @@ Store.prototype.query=function(query, opts){
 		}) 
 	}
 
-//	console.log("SEARCH: ", search);
-//	console.log("META: ", meta);
+	console.log("SEARCH: ", search);
+	console.log("META: ", meta);
 
 
 	var handler = function(err,cursor){
