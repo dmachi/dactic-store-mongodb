@@ -18,7 +18,7 @@ RQLQuery.prototype.toMongo= function(opts){
         };
 
 	var out = queryToMongo(this,meta)
-	console.log("toMongo out: ", out, meta);
+	//console.log("toMongo out: ", out, meta);
 
 	return [out,meta];
 }
@@ -314,7 +314,7 @@ var handlers = [
                         var val = decodeURIComponent(parts[1]);
                         var field = parts[0];
 			var out={};
-			out[field]={"$gt":val};
+			out[field]={"$lt":val};
 			return out;	
 		}],
 
@@ -334,7 +334,7 @@ var handlers = [
 			var val;
 			var out={};
                         var field = parts[0];
-			console.log("query.args[1]: ", query.args[1]);
+			//console.log("query.args[1]: ", query.args[1]);
 			if (typeof query.args[1]=="object"){
 				val = queryToMongo(query.args[1],options);
 				out[field]={"$elemMatch":val};
