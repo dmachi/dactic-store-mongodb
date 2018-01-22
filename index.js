@@ -164,17 +164,20 @@ Store.prototype.query=function(query, opts){
 		totalCountPromise = when(collection.count(search), function(totalCount){
 			//console.log("TotalCount: ", totalCount);
 			totalCount -= meta.lastSkip;
-			if (totalCount < 0)
+			if (!totalCount || (totalCount < 0))
 				totalCount = 0;
 			if (meta.lastLimit < totalCount)
 				totalCount = meta.lastLimit;
 			// N.B. just like in rql/js-array
-			return Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity);
+			meta.totalCount = Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity); 
+			//return Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity);
+			//console.log("Cur Meta: ", meta);
+			return meta.totalCount;
 		}) 
 	}
 
-	console.log("SEARCH: ", search);
-	console.log("META: ", meta);
+	//console.log("SEARCH: ", search);
+	//console.log("META: ", meta);
 
 
 	var handler = function(err,cursor){
@@ -207,13 +210,13 @@ Store.prototype.query=function(query, opts){
 				}
 			}
 			// total count
-			when(totalCountPromise, function(result){
-				//console.log("Got Total Count Promise");
+			when(totalCountPromise, function(tc){
+				//console.log("Got Total Count Promise", tc);
 				var metadata = {}
 				metadata.count = results.length;
 				metadata.start = meta.skip;
 				metadata.end = meta.skip + results.count;
-				metadata.totalCount = result;
+				metadata.totalCount = tc;
 
 				//console.log("MongoDB Store Results: ", results)
 				//console.log("   Result Meta: ", metadata);
