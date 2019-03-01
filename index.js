@@ -32,7 +32,6 @@ Store.prototype.connect=function(){
 			if (err){
 				def.reject(Error("Unable to connect to MongoDB: " + err));
 			}
-			console.log("Internal Connection Complete");
 			_self.client=client;
 			def.resolve(client);
 			
@@ -60,15 +59,12 @@ Store.prototype.setSchema=function(schema){
 
 		_self.client.collection(_self.id, function(err,col){
 			if (err){
-				console.log("Error Retrieving Collection: " + err);
+				console.warn("Error Retrieving Collection: " + err);
 				return colDef.reject(err)
 			}
 			col.stats(function(err,stats){
-				console.log("stats: ", stats);
 				if (!stats){
 					_self.client.createCollection(_self.id, function(err,col){
-						console.log("Collection: ", col);
-
 						colDef.resolve(col);
 					})
 				}else{
@@ -87,19 +83,16 @@ Store.prototype.setSchema=function(schema){
 	//ensure index;
 	if (colDef){
 		when(colDef, function(col){
-			console.log("Check for Indexes");
+			debug("Check for Indexes");
 			var indexes=[]
 			if (_self.schema && _self.schema.properties){
-				console.log("Checking schema for indexed properties");
 				Object.keys(_self.schema.properties).forEach(function(prop){
 					if (_self.schema.properties[prop] && _self.schema.properties[prop].index){
 						var spec = {name: prop, unique: _self.schema.properties[prop].unique?true:false};
 						indexes.push(col.createIndex(prop,{w:1, unique:_self.schema.properties[prop].unique?true:false }));
 					}
 				})
-				console.log("indexes: ", indexes);
 				when(All(indexes), function(){
-					console.log("All Indexes Created");
 					def.resolve(true);
 				})
 
@@ -150,8 +143,8 @@ Store.prototype.query=function(query, opts){
 			return Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity);
 		}) : undefined;
 
-	console.log("SEARCH: ", search);
-	console.log("META: ", meta);
+	//console.log("SEARCH: ", search);
+	//console.log("META: ", meta);
 
 	collection.find(search, meta, function(err, cursor){
 		if (err) return deferred.reject(err);
@@ -177,15 +170,14 @@ Store.prototype.query=function(query, opts){
 			}
 			// total count
 			when(totalCountPromise, function(result){
-				console.log("Got Total Count Promise");
 				var metadata = {}
 				metadata.count = results.length;
 				metadata.start = meta.skip;
 				metadata.end = meta.skip + results.count;
 				metadata.totalCount = result;
 
-				console.log("MongoDB Store Results: ", results)
-				console.log("   Result Meta: ", metadata);
+				debug("MongoDB Store Results: ", results)
+				debug("   Result Meta: ", metadata);
 				deferred.resolve(new Result(results,metadata))
 			});
 		});
@@ -211,10 +203,8 @@ Store.prototype.get=function(id, opts){
 }
 
 Store.prototype.post=function(obj, opts){
-	console.log("mongodb store post");
 	return when(this.put(obj,opts),function(results){
 		var obj = results.results;
-		console.log("store post() put() res: ", obj);
 		//return obj;
 		return new Result(obj);
 	});
@@ -223,33 +213,27 @@ Store.prototype.post=function(obj, opts){
 Store.prototype.put=function(obj, opts){
 	var deferred = defer();
 	opts = opts || {};
-	var id = opts.id || obj.id;
-	if (!obj.id) obj.id = id;
-	var search = {id: id};
+	var search = {id: obj[this.primaryKey]};
 	var collection = this.client.collection(this.collectionId || this.id);
-	if (opts.overwrite === false || !id) {
-		console.log("overwrite or insert store put()", obj, opts);
+	if (!opts.overwrite) {
 		// do an insert, and check to make sure no id matches first
 		collection.findOne(search, function(err, found){
 			if (err) return deferred.reject(err);
 			if (found === null) {
 				if (!obj.id) obj.id = ObjectID.createPk().toJSON();
-				collection.insert(obj, function(err, obj){
-					console.log("store colleciton insert res: ", obj);
+				collection.insertOne(obj, function(err, robj){
 					if (err) return deferred.reject(err);
 					// .insert() returns array, we need the first element
-					obj = obj && obj[0];
-					if (obj) delete obj._id;
-					deferred.resolve(new Result(obj));
+					robj = robj && robj[0];
+					if (robj) delete robj._id;
+					deferred.resolve(new Result(robj));
 				});
 			} else {
 				deferred.reject(id + " exists, and can't be overwritten");
 			}
 		});
 	} else {
-		console.log("put() store update: ", obj);
 		collection.update(search, obj, {upsert: opts.overwrite}, function(err, res){
-			console.log("colleciton.update Put Results: ", obj);
 			if (err) return deferred.reject(err);
 			if (obj) delete obj._id;
 			deferred.resolve(new Result(obj));
