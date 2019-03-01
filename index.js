@@ -11,7 +11,9 @@ var defer = require("promised-io/promise").defer;
 var when = require("promised-io/promise").when;
 var ObjectID = require('bson').ObjectID;
 var jsArray = require("rql/js-array");
-var RQ = require("rql/parser");
+//var RQ = require("rql/parser");
+var RQ = require("./rql");
+
 var Result = require("dactic/result");
 
 var Store = module.exports = function(id,options){
@@ -22,7 +24,6 @@ util.inherits(Store, StoreBase);
 
 Store.prototype.authConfigProperty="solr";
 Store.prototype.primaryKey="id";
-	
 Store.prototype.connect=function(){
 	var def = new defer()
 	if (this.options && this.options.url) {
@@ -46,6 +47,21 @@ Store.prototype.connect=function(){
 Store.prototype.getSchema=function(){
 	debug("getSchema()");
 	return this.schema || {}	
+}
+
+Store.prototype.increment = function(id,obj){
+	var q = {};
+	q[this.primaryKey] = id;
+	var update = {"$inc": obj};
+	var def = new Deferred();
+
+	var collection = this.client.collection(this.collectionId || this.id);
+	collection.update(q, update, function(err, res){
+		if (err) return def.reject(err);
+		def.resolve(new Result(true));
+	});
+
+	return def.promise;
 }
 
 Store.prototype.setSchema=function(schema){
@@ -86,7 +102,7 @@ Store.prototype.setSchema=function(schema){
 			debug("Check for Indexes");
 			var indexes=[]
 			if (_self.schema && _self.schema.properties){
-				Object.keys(_self.schema.properties).forEach(function(prop){
+			Object.keys(_self.schema.properties).forEach(function(prop){
 					if (_self.schema.properties[prop] && _self.schema.properties[prop].index){
 						var spec = {name: prop, unique: _self.schema.properties[prop].unique?true:false};
 						indexes.push(col.createIndex(prop,{w:1, unique:_self.schema.properties[prop].unique?true:false }));
@@ -117,7 +133,9 @@ Store.prototype.query=function(query, opts){
 
 	// compose search conditions
 	var x = parse(query, opts);
-	var meta = x[0], search = x[1];
+	var meta = x[1], search = x[0];
+
+	
 
 	// range of non-positive length is trivially empty
 	//if (options.limit > options.totalCount)
@@ -132,57 +150,87 @@ Store.prototype.query=function(query, opts){
 	// N.B. due to collection.count doesn't respect meta.skip and meta.limit
 	// we have to correct returned totalCount manually.
 	// totalCount will be the minimum of unlimited query length and the limit itself
-	var totalCountPromise = (meta.totalCount) ?
-		when(callAsync(collection.count, [search]), function(totalCount){
+	var totalCountPromise;
+	if (meta.totalCount){
+		totalCountPromise = (meta.totalCount)
+	}else{
+		totalCountPromise = when(collection.count(search), function(totalCount){
+			//console.log("TotalCount: ", totalCount);
 			totalCount -= meta.lastSkip;
-			if (totalCount < 0)
+			if (!totalCount || (totalCount < 0))
 				totalCount = 0;
 			if (meta.lastLimit < totalCount)
 				totalCount = meta.lastLimit;
 			// N.B. just like in rql/js-array
-			return Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity);
-		}) : undefined;
+			meta.totalCount = Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity); 
+			//return Math.min(totalCount, typeof meta.totalCount === "number" ? meta.totalCount : Infinity);
+			//console.log("Cur Meta: ", meta);
+			return meta.totalCount;
+		}) 
+	}
 
 	//console.log("SEARCH: ", search);
 	//console.log("META: ", meta);
 
-	collection.find(search, meta, function(err, cursor){
+	var handler = function(err,cursor){
+		//console.log("handler args: ", arguments);
 		if (err) return deferred.reject(err);
 		cursor.toArray(function(err, results){
+			//console.log("MONGO RESULTS: ", results);
 			if (err) return deferred.reject(err);
 			// N.B. results here can be [{$err: 'err-message'}]
 			// the only way I see to distinguish from quite valid result [{_id:..., $err: ...}] is to check for absense of _id
 			if (results && results[0] && results[0].$err !== undefined && results[0]._id === undefined) {
 				return deferred.reject(results[0].$err);
 			}
-			var fields = meta.fields;
+			var fields = meta.select && (meta.select.length>0);
+			//console.log("fields: ",fields);
 			var len = results.length;
 			// damn ObjectIDs!
-			for (var i = 0; i < len; i++) {
-				delete results[i]._id;
+			if (!_self.options.dontRemoveMongoIds){
+				for (var i = 0; i < len; i++) {
+					delete results[i]._id;
+				}
 			}
 			// kick out unneeded fields
 			if (fields) {
+				//results = jsArray.executeQuery('select(' + fields + ')', {},results);
+				//console.log("Post Select results: ", results);
 				// unhash objects to arrays
 				if (meta.unhash) {
-					results = jsArray.executeQuery('values('+fields+')', directives, results);
+					results = jsArray.executeQuery('values('+fields+')', {}, results);
 				}
 			}
 			// total count
 			when(totalCountPromise, function(result){
-				var metadata = {}
+			var metadata = {}
 				metadata.count = results.length;
 				metadata.start = meta.skip;
 				metadata.end = meta.skip + results.count;
-				metadata.totalCount = result;
+				metadata.totalCount = tc;
 
 				debug("MongoDB Store Results: ", results)
 				debug("   Result Meta: ", metadata);
 				deferred.resolve(new Result(results,metadata))
 			});
 		});
-	});
 
+	}
+
+	if (meta.distinct){
+		collection.distinct(meta.distinct,search,function(err,docs){
+			if (err) return deferred.reject(err);
+
+			var metadata = {}
+			metadata.count = docs.length;
+			metadata.start = meta.skip;
+			metadata.end = meta.skip + docs.length;
+			metadata.totalCount = docs.length;
+			deferred.resolve(new Result(docs,metadata));
+		});
+	}else{
+		collection.find(search, meta, handler);
+	}
 	return deferred.promise;
 }
 
@@ -194,7 +242,9 @@ Store.prototype.get=function(id, opts){
 	var collection = this.client.collection(this.collectionId || this.id);
 	collection.find(query).toArray(function(err,docs){
 		if (docs[0]) { 
-			delete docs[0]._id; 
+			if (!_self.options.dontRemoveMongoIds){
+				delete docs[0]._id; 
+			}
 			return def.resolve(new Result(docs[0])); 
 		}
 		def.reject();
@@ -205,27 +255,37 @@ Store.prototype.get=function(id, opts){
 Store.prototype.post=function(obj, opts){
 	return when(this.put(obj,opts),function(results){
 		var obj = results.results;
-		//return obj;
 		return new Result(obj);
 	});
 }
 
 Store.prototype.put=function(obj, opts){
+	//console.log("Store.put(obj): ",obj);
 	var deferred = defer();
 	opts = opts || {};
 	var search = {id: obj[this.primaryKey]};
 	var collection = this.client.collection(this.collectionId || this.id);
 	if (!opts.overwrite) {
-		// do an insert, and check to make sure no id matches first
+	// do an insert, and check to make sure no id matches first
 		collection.findOne(search, function(err, found){
 			if (err) return deferred.reject(err);
 			if (found === null) {
-				if (!obj.id) obj.id = ObjectID.createPk().toJSON();
+				if (!obj[_self.primaryKey]) {
+//					console.log("Generating ID on " + _self.primaryKey);
+					obj[_self.primaryKey] = ObjectID.createPk().toJSON();
+				}
+
+
+				//console.log("collection.insert: ",obj);
 				collection.insertOne(obj, function(err, robj){
-					if (err) return deferred.reject(err);
+					//console.log("store collection insert res: ", robj);
+					if (err) {
+						console.log("Store Collection Insert Error: ", err);
+						return deferred.reject(err);
+					}
 					// .insert() returns array, we need the first element
 					robj = robj && robj[0];
-					if (robj) delete robj._id;
+					if (robj && (!_self.options.dontRemoveMongoIds)) delete robj._id;
 					deferred.resolve(new Result(robj));
 				});
 			} else {
@@ -233,9 +293,10 @@ Store.prototype.put=function(obj, opts){
 			}
 		});
 	} else {
+		//console.log("store.put() update: ", obj);
 		collection.update(search, obj, {upsert: opts.overwrite}, function(err, res){
 			if (err) return deferred.reject(err);
-			if (obj) delete obj._id;
+			if (obj && (!_self.options.dontRemoveMongoIds)) delete obj._id;
 			deferred.resolve(new Result(obj));
 		});
 	}
@@ -253,8 +314,28 @@ Store.prototype.delete=function(obj,opts){
 }
 	
 
+function parse(query,directives){
+	// parse string to parsed terms
+	if(typeof query === "string"){
+		query = new RQ(query); // RQ.parseQuery(query);
+	}
+/*
+	console.log("parse query: ", query);
+	var options = {
+		skip: 0,
+		limit: +Infinity,
+		lastSkip: 0,
+		lastLimit: +Infinity
+	};
+*/
 
-function parse(query, directives){
+	var mq = query.toMongo();
+//	console.log("mq: ", mq);
+
+	return mq;
+}
+
+function parseOrg(query, directives){
 	// parse string to parsed terms
 	if(typeof query === "string"){
 		// handle $-parameters
@@ -282,6 +363,7 @@ function parse(query, directives){
 //if (!needBulkFetch) {
 
 	function walk(name, terms) {
+		console.log("Walking: ", name, "terms: ", terms);
 		// valid funcs
 		var valid_funcs = ['lt','lte','gt','gte','ne','in','nin','not','mod','all','size','exists','type','elemMatch'];
 		// funcs which definitely require array arguments
@@ -292,6 +374,7 @@ function parse(query, directives){
 		var search = {};
 		// iterate over terms
 		terms.forEach(function(term){
+			console.log("Check Term: ", term);
 			var func = term.name;
 			var args = term.args;
 			// ignore bad terms
@@ -318,6 +401,8 @@ function parse(query, directives){
 				options.unhash = true;
 				options.fields = args;
 				// N.B. mongo has $slice but so far we don't allow it
+			} else if (func == "distinct") {
+				options.distinct = args[0] || false;
 			/*} else if (func == 'slice') {
 				options[args.shift()] = {'$slice': args.length > 1 ? args : args[0]};*/
 			} else if (func == 'limit') {
@@ -336,12 +421,18 @@ function parse(query, directives){
 				// TODO:
 				// nested terms? -> recurse
 			} else if (args[0] && typeof args[0] === 'object') {
+				console.log("WALKING OBJECT: ", args);
+				console.log("func: ", func);
+				console.log("Valid operators: ", valid_operators);
 				if (valid_operators.indexOf(func) > -1){
 					if (func=="and") {
 						search['$'+func] = [walk(func, args)];
 					}else{
+						console.log("else walk(args): ", walk(args));
 						search["$"+func] = walk(func,args);
 					}
+				}else{
+					console.log("Func: ", func, " is not a valid operator");
 				}
 				// N.B. here we encountered a custom function
 				// ...
@@ -379,6 +470,7 @@ function parse(query, directives){
 				}
 				// $or requires an array of conditions
 				// N.B. $or is said available for mongodb >= 1.5.1
+				console.log("name: ", name);
 				if (name == 'or') {
 					if (!(search instanceof Array))
 						search = [];
@@ -388,10 +480,20 @@ function parse(query, directives){
 					// other functions pack conditions into object
 				} else {
 					// several conditions on the same property is merged into one object condition
+					console.log("search key: ", key, "search[key]=",search[key]);
 					if (search[key] === undefined)
 						search[key] = {};
-					if (search[key] instanceof Object && !(search[key] instanceof Array))
-						search[key][func] = args;
+					if (search[key] instanceof Object && !(search[key] instanceof Array)){
+						console.log("Add Function Args:" ,args);
+						//if (false){
+						//if (args.name) {
+						//	console.log("args.name: ", args.name, " args.args: ", args.args);
+						//	search[key][func] = walk("and",[args]);
+						//	console.log("search[" + key + "][" + func + "]", search[key][func]);
+						//}else{
+							search[key][func] = args;
+						//}
+					}
 					// equality cancels all other conditions
 					if (func == 'eq')
 						search[key] = args;
@@ -399,11 +501,12 @@ function parse(query, directives){
 			}
 			// TODO: add support for query expressions as Javascript
 		});
+		console.log("Return Search: ", search);
 		return search;
 	}
-	//dir(['Q:',query]);
+	console.log(['Q:',query]);
 	search = walk(query.name, query.args);
-	//dir(['S:',search]);
+	console.log(['S:',search]);
 	return [options, search];
 }
 
