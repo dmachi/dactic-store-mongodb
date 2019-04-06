@@ -29,13 +29,17 @@ Store.prototype.connect=function(){
 	if (this.options && this.options.url) {
 		debug("Creating MongoClient client @ " + this.options.url + "/" + this.id);
 		var _self=this;
-		MongoClient.connect(this.options.url , function(err,client){
+		var client = MongoClient(this.options.url);
+
+		var parts = this.options.url.split("/")
+		var dbName = parts[parts.length-1]
+
+		client.connect(function(err){
 			if (err){
 				def.reject(Error("Unable to connect to MongoDB: " + err));
 			}
-			_self.client=client;
+			_self.client=client.db(dbName);
 			def.resolve(client);
-			
 		});
 	}else{
 		def.reject(new Error("Missing MongoDB configuration in Store Init"));
@@ -207,7 +211,7 @@ Store.prototype.query=function(query, opts){
 				metadata.count = results.length;
 				metadata.start = meta.skip;
 				metadata.end = meta.skip + results.count;
-				metadata.totalCount = tc;
+				metadata.totalCount = results.tc;
 
 				debug("MongoDB Store Results: ", results)
 				debug("   Result Meta: ", metadata);
@@ -228,6 +232,24 @@ Store.prototype.query=function(query, opts){
 			metadata.totalCount = docs.length;
 			deferred.resolve(new Result(docs,metadata));
 		});
+	}else if (meta.join){
+		console.log("collection.aggregate: ", JSON.stringify(meta.join));
+		var cursor = collection.aggregate(meta.join,{cursor: {batchSize:3000}})
+		
+			var docs = []
+
+			cursor.on("data",function(d){ docs.push(d); });
+			cursor.on("end", function(data){
+				if (data) { console.log("ERROR DATA IN END UNHANDLED")}
+				console.log("docs: ", docs);
+				var metadata = {}
+				metadata.count = docs.length;
+				metadata.start = meta.skip;
+				metadata.end = meta.skip + docs.length;
+				metadata.totalCount = docs.length;
+				deferred.resolve(new Result(docs,metadata));
+			});
+			cursor.on("error", function(err){ deferred.reject(err); });
 	}else{
 		collection.find(search, meta, handler);
 	}

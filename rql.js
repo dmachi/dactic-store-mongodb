@@ -415,6 +415,22 @@ var handlers = [
 			if (l < options.limit) options.limit = l;
 			//console.log("Options after limit: ", options);
 			return;
+		}],
+
+		["join", function(query,options){
+			var args = query.args;
+			options.join = [{
+				$match: queryToMongo(args[0])
+			},{
+				$lookup: {from: args[1],localField: args[2],foreignField: args[3], as: "_JOINED_"}
+			},{
+				$replaceRoot: {newRoot: {$mergeObjects:[{$arrayElemAt: ["$_JOINED_",0]},"$$ROOT"]}}
+			}]
+
+			if (args[4]){
+				options.join.push({$match: queryToMongo(args[4])})
+			}
+			//console.log("Join Query: ", options.join);
 		}]
 
 ]	
