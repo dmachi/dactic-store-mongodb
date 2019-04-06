@@ -283,6 +283,7 @@ Store.prototype.post=function(obj, opts){
 
 Store.prototype.put=function(obj, opts){
 	//console.log("Store.put(obj): ",obj);
+	var _self=this;
 	var deferred = defer();
 	opts = opts || {};
 	var search = {id: obj[this.primaryKey]};
@@ -326,11 +327,16 @@ Store.prototype.put=function(obj, opts){
 	return deferred.promise;
 }
 
-Store.prototype.delete=function(obj,opts){
+Store.prototype.delete=function(id,opts){
 	var deferred = defer();
-	collection.remove(search, function(err, result){
+	var collection = this.client.collection(this.collectionId || this.id);
+	var search = {}
+	search[this.primaryKey]=id
+	console.log("Search: ", search);
+	collection.deleteOne(search, function(err, result){
 		if (err) return deferred.reject(err);
-		deferred.resolve(undefined);
+		console.log("Delete Result: ", result);
+		deferred.resolve(new Result(true));
 	});
 	return deferred;
 }
