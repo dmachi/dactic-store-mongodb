@@ -279,6 +279,12 @@ var handlers = [
 			out[query.args[0]]={"$exists": true}
 			return out;
 		}],
+		["empty", function(query, options){
+			var out ={};
+			out[query.args[0]]={"$exists": false}
+			return out;
+		}],
+
 		["ge", function(query, options){
 			var parts = [query.args[0]]
 			parts.push(queryToMongo(query.args[1],options));
