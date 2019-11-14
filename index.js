@@ -233,7 +233,7 @@ Store.prototype.query=function(query, opts){
 			deferred.resolve(new Result(docs,metadata));
 		});
 	}else if (meta.join){
-		console.log("collection.aggregate: ", JSON.stringify(meta.join));
+		//console.log("collection.aggregate: ", JSON.stringify(meta.join));
 		var cursor = collection.aggregate(meta.join,{cursor: {batchSize:3000}})
 		
 			var docs = []
@@ -241,7 +241,7 @@ Store.prototype.query=function(query, opts){
 			cursor.on("data",function(d){ docs.push(d); });
 			cursor.on("end", function(data){
 				if (data) { console.log("ERROR DATA IN END UNHANDLED")}
-				console.log("docs: ", docs);
+				//console.log("docs: ", docs);
 				var metadata = {}
 				metadata.count = docs.length;
 				metadata.start = meta.skip;
