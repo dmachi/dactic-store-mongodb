@@ -1,6 +1,6 @@
 {
   "name": "dactic-store-mongodb",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "MongoDB Data Store for the Dactic framework",
   "main": "index.js",
   "scripts": {
