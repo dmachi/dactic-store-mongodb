@@ -29,10 +29,15 @@ Store.prototype.connect=function(){
 	if (this.options && this.options.url) {
 		debug("Creating MongoClient client @ " + this.options.url + "/" + this.id);
 		var _self=this;
-		var client = MongoClient(this.options.url);
+		var client = MongoClient(this.options.url,this.options.opts || {});
+                var dbName;
 
-		var parts = this.options.url.split("/")
-		var dbName = parts[parts.length-1]
+                if (this.options.db){
+                  dbName = this.options.db;
+                }else {
+		  var parts = this.options.url.split("/")
+		  dbName = parts[parts.length-1]
+                }
 
 		client.connect(function(err){
 			if (err){
