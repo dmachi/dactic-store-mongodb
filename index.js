@@ -35,8 +35,7 @@ Store.prototype.connect=function(){
                 if (this.options.db){
                   dbName = this.options.db;
                 }else {
-		  var parts = this.options.url.split("/")
-		  dbName = parts[parts.length-1]
+									dbName = path.basename(new URL(this.options.url).pathname)
                 }
 
 		client.connect(function(err){
